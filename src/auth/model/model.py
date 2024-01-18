@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, String, Integer
+from sqlalchemy import Column, String, Integer
 from database.database import Base
 
 class UserCreds(Base):
