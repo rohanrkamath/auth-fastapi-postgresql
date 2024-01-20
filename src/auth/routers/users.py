@@ -19,10 +19,10 @@ async def register(user: schema.UserSchema, db: Session = Depends(database.get_d
 @router.post("/login/")
 async def login(user: schema.UserSchema, db: Session = Depends(database.get_db)):
     db_user = crud.get_user_by_email(db, email=user.email)
-    if not db_user or not password.verify_password(user.password, db_user.password):
+    if not db_user or not password.verify_password(user.password, db_user.hashed_password):
         return HTTPException(status_code=400, detail="Incorrect email/password")
 
-    return {"message": "Welcome" + db_user.email}
+    return {"message": "Welcome " + db_user.email}
                    
 # delete
 
