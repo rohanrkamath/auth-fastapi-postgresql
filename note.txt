@@ -1,0 +1,7 @@
+project structure - 
+server.py
+database/
+model/
+schema/
+utils/
+settings/
