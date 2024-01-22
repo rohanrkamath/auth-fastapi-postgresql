@@ -1,0 +1,1 @@
+curl command for validating jwt - curl -X POST "http://localhost:8000/validate" -H "accept: application/json" -H "Authorization: Bearer "enter token here"

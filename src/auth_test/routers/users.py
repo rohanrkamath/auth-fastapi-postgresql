@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from util import crud, password
+from util import crud, password, jwt
 from schema import schema 
 from database import database
 router = APIRouter()
@@ -21,6 +21,10 @@ async def login(user: schema.UserSchema, db: Session = Depends(database.get_db))
     db_user = crud.get_user_by_email(db, email=user.email)
     if not db_user or not password.verify_password(user.password, db_user.hashed_password):
         return HTTPException(status_code=400, detail="Incorrect email/password")
+    
+    jwt_output = jwt.create_access_token(
+        data={"sub": user.email}
+    )
 
     return {"message": "Welcome " + db_user.email}
                    
