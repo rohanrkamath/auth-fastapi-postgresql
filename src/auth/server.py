@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Body
 from fastapi.security import HTTPBasic, HTTPBasicCredentials, OAuth2PasswordBearer
 from fastapi.responses import StreamingResponse
 import asyncpg
@@ -8,6 +8,8 @@ import pyotp
 import qrcode
 import io
 import os
+
+from schema import *
 
 server = FastAPI()
 security = HTTPBasic()
@@ -47,60 +49,99 @@ def create_jwt(username: str, secret: str, admin: bool):
 ##### Registration routes
 
 @server.post("/register")
-async def register(credentials: HTTPBasicCredentials, db=Depends(get_db)):
-    username = credentials.username
-    password = credentials.password 
+async def register(user_data: UserRegistration = Body(...), db=Depends(get_db)):
+    username = user_data.username
+    password = user_data.password
 
-    async with db.acquire() as connection:
-        existing_user = await connection.fetchrow(
-            "SELECT email FROM temp_users WHERE email = $1", username
-        )
+    async with db.transaction():
+        existing_user = await db.fetchrow("SELECT email FROM temp_users WHERE email = $1", username)
         if existing_user:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already exists"
-            )
+            raise HTTPException(status_code=400, detail="Username already exists")
 
         totp_secret = pyotp.random_base32()
+        await db.execute("INSERT INTO temp_users (email, password, totp_secret) VALUES ($1, $2, $3)", username, password, totp_secret)
 
-        # Store temporary data in temp_users table
-        await connection.execute(
-            "INSERT INTO temp_users (email, password, totp_secret) VALUES ($1, $2, $3)",
-            username, password, totp_secret
-        )
-
-        # Generate QR code
         totp_uri = pyotp.totp.TOTP(totp_secret).provisioning_uri(username, issuer_name="YourAppName")
-        qr_image = qrcode.make(totp_uri)
-        qr_buffer = io.BytesIO()
-        qr_image.save(qr_buffer)
-        qr_buffer.seek(0)
+        return {"qr_code_uri": totp_uri}
 
-    return StreamingResponse(qr_buffer, media_type="image/png")
+# @server.post("/register")
+# async def register(credentials: HTTPBasicCredentials, db=Depends(get_db)):
+#     username = credentials.username
+#     password = credentials.password 
+
+#     async with db.acquire() as connection:
+#         existing_user = await connection.fetchrow(
+#             "SELECT email FROM temp_users WHERE email = $1", username
+#         )
+#         if existing_user:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail="Username already exists"
+#             )
+
+#         totp_secret = pyotp.random_base32()
+
+#         # Store temporary data in temp_users table
+#         await connection.execute(
+#             "INSERT INTO temp_users (email, password, totp_secret) VALUES ($1, $2, $3)",
+#             username, password, totp_secret
+#         )
+
+#         # Generate QR code
+#         totp_uri = pyotp.totp.TOTP(totp_secret).provisioning_uri(username, issuer_name="YourAppName")
+#         qr_image = qrcode.make(totp_uri)
+#         qr_buffer = io.BytesIO()
+#         qr_image.save(qr_buffer)
+#         qr_buffer.seek(0)
+
+#     return StreamingResponse(qr_buffer, media_type="image/png")
 
 @server.post("/validate-totp")
-async def validate_totp(username: str, totp_code: str, db=Depends(get_db)):
+async def validate_totp(totp_validation: TOTPValidation, db=Depends(get_db)):
     async with db.acquire() as connection:
-        # Retrieve the temporarily stored TOTP secret
         temp_user = await connection.fetchrow(
-            "SELECT * FROM temp_users WHERE email = $1", username
+            "SELECT * FROM temp_users WHERE email = $1", totp_validation.username
         )
         if not temp_user:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+            raise HTTPException(status_code=404, detail="User not found")
 
         totp_secret = temp_user['totp_secret']
         totp = pyotp.TOTP(totp_secret)
-        if totp.verify(totp_code):
+        if totp.verify(totp_validation.totp_code):
             await connection.execute(
-                "INSERT INTO users (email, password) VALUES ($1, $2)",
+                "INSERT INTO users (email, password) VALUES ($1, $2)", 
                 temp_user['email'], temp_user['password']
             )
             await connection.execute(
-                "DELETE FROM temp_users WHERE email = $1", username
+                "DELETE FROM temp_users WHERE email = $1", totp_validation.username
             )
             return {"message": "Registration successful"}
         else:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid TOTP code")
+            raise HTTPException(status_code=403, detail="Invalid TOTP code")
+
+# @server.post("/validate-totp")
+# async def validate_totp(username: str, totp_code: str, db=Depends(get_db)):
+#     async with db.acquire() as connection:
+#         # Retrieve the temporarily stored TOTP secret
+#         temp_user = await connection.fetchrow(
+#             "SELECT * FROM temp_users WHERE email = $1", username
+#         )
+#         if not temp_user:
+#             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+#         totp_secret = temp_user['totp_secret']
+#         totp = pyotp.TOTP(totp_secret)
+#         if totp.verify(totp_code):
+#             await connection.execute(
+#                 "INSERT INTO users (email, password) VALUES ($1, $2)",
+#                 temp_user['email'], temp_user['password']
+#             )
+#             await connection.execute(
+#                 "DELETE FROM temp_users WHERE email = $1", username
+#             )
+#             return {"message": "Registration successful"}
+#         else:
+#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid TOTP code")
         
 ##### Login routes
 
@@ -132,4 +173,4 @@ async def validate(token: str = Depends(oauth2_scheme)):
             detail=str(e)
         )
     return decoded["username"] + " has sucessfully logged in!"
-        
+       
