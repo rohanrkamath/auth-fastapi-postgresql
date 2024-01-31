@@ -1,7 +1,10 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request, File, UploadFile
 import pika, gridfs, json, os
 import asyncio
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
+# import motor.motor_gridfs
+
+# from motor.motor_gridfs import AsyncIOMotorGridFSBucket 
 from pymongo import MongoClient
 
 from schema import UserRegistration, TOTPValidation
@@ -12,14 +15,23 @@ from storage import util
 from reg import regAuth
 
 server = FastAPI()
-MONGO_URI = "mongodb://host.minikube.internal:27017/videos"
-async_client = AsyncIOMotorClient(MONGO_URI)
-async_db = async_client.get_default_database()
 
-sync_client = MongoClient(MONGO_URI)
-sync_db = sync_client.get_default_database()
-fs = gridfs.GridFS(sync_db)
+mongo_client = AsyncIOMotorClient("mongodb://host.minikube.internal:27017")
+video_db = mongo_client.videos
+fs_videos = AsyncIOMotorGridFSBucket(video_db)
+# (video_db)
 
+mp3_db = mongo_client.mp3
+fs_mp3s = AsyncIOMotorGridFSBucket(mp3_db)
+# server = FastAPI()
+# MONGO_URI = "mongodb://host.minikube.internal:27017/videos"
+# async_client = AsyncIOMotorClient(MONGO_URI)
+# async_db = async_client.get_default_database()
+# 
+# sync_client = MongoClient(MONGO_URI)
+# sync_db = sync_client.get_default_database()
+# fs = gridfs.GridFS(sync_db)
+# 
 connection = pika.BlockingConnection(pika.ConnectionParameters("rabbitmq"))
 channel = connection.channel()
 
